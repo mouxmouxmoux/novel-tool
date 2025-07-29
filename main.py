@@ -12,6 +12,7 @@ from clustering import TextClusterer
 from state_manager import StateManager
 from simhash import Simhash
 from datasketch import MinHash
+from redis_cache import RedisCache
 
 def setup_logging():
     """设置日志"""
@@ -24,12 +25,16 @@ def setup_logging():
         ]
     )
 
-def process_file_batch(file_batch, file_processor, text_cleaner, feature_extractor, state_manager):
+def process_file_batch(file_batch, file_processor, text_cleaner, feature_extractor, state_manager, redis_cache):
     """处理一批文件"""
     results = []
     
     for original_path, temp_path in file_batch:
         try:
+            # 检查是否已处理
+            if state_manager.is_processed(original_path):
+                continue
+                
             # 读取清洗后的文本
             with open(temp_path, 'r', encoding='utf-8') as f:
                 text = f.read()
@@ -39,16 +44,26 @@ def process_file_batch(file_batch, file_processor, text_cleaner, feature_extract
             
             # 检查内容有效性
             if text_cleaner.is_valid_content(text):
-                # 提取特征
-                features = feature_extractor.extract_features(cleaned_text)
+                # 检查Redis缓存中是否已有特征
+                features = redis_cache.get_file_features(original_path)
+                if not features:
+                    # 提取特征
+                    features = feature_extractor.extract_features(cleaned_text)
+                    # 保存特征到Redis缓存
+                    redis_cache.save_file_features(original_path, features)
+                else:
+                    logging.info(f"从Redis缓存加载特征: {original_path}")
                 
-                # 保存特征
+                # 保存特征到状态管理器
                 state_manager.save_file_features(original_path, features)
                 
                 results.append((original_path, features))
+                state_manager.mark_processed(original_path)
         except Exception as e:
             logging.error(f"处理文件 {original_path} 失败: {str(e)}")
     
+    # 定期保存状态
+    state_manager.save()
     return results
 
 def organize_results(clusters, output_dir):
@@ -78,6 +93,7 @@ def main():
     
     # 初始化组件
     state_manager = StateManager(STATE_FILE)
+    redis_cache = RedisCache()
     file_processor = FileProcessor(SOURCE_DIR, TEMP_DIR)
     text_cleaner = TextCleaner()
     feature_extractor = FeatureExtractor()
@@ -130,7 +146,8 @@ def main():
                     file_processor, 
                     text_cleaner, 
                     feature_extractor,
-                    state_manager
+                    state_manager,
+                    redis_cache
                 )
                 futures.append(future)
             

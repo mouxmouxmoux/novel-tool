@@ -15,3 +15,9 @@ MAX_WORKERS = 8                            # 最大并行工作数
 # 文本清洗参数
 MAX_AD_RATIO = 0.3                         # 最大广告内容比例
 MIN_CONTENT_RATIO = 0.5                    # 最小正文内容比例
+
+# Redis配置
+REDIS_HOST = "localhost"                   # Redis主机
+REDIS_PORT = 6379                          # Redis端口
+REDIS_DB = 0                               # Redis数据库编号
+USE_REDIS = True                           # 是否使用Redis缓存
